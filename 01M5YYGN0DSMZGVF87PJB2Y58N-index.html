@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MyAI - Your Personal AI</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Georgia,serif;background:#0f0f1a;color:#eee;display:flex;flex-direction:column;height:100vh}
+header{background:#1a1a2e;padding:1rem 1.5rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #333}
+header h1{font-size:1.4rem}header h1 span{color:#7dd3fc}
+#chat{flex:1;overflow-y:auto;max-width:750px;width:100%;margin:0 auto;padding:1.2rem .9rem;display:flex;flex-direction:column;gap:.7rem}
+.msg{max-width:85%;padding:.8rem 1rem;border-radius:16px;line-height:1.5;white-space:pre-wrap;color:#111}
+.me{align-self:flex-end;background:#7dd3fc}
+.myai{align-self:flex-start;background:#fff;border-bottom-left-radius:4px}
+#memoryBox{max-width:750px;width:100%;margin:.6rem auto 0;padding:.7rem 1rem;background:#1e293b;border-radius:12px;font-size:.88rem;color:#cbd5e1}
+#memoryBox a{color:#7dd3fc}
+#inputBar{max-width:750px;width:100%;margin:0 auto;padding:.8rem;display:flex;gap:.6rem}
+#in{flex:1;padding:.85rem;border-radius:999px;border:1px solid #444;font-size:1rem;background:#fff;color:#111}
+button{background:#7dd3fc;border:none;border-radius:999px;padding:.8rem 1.3rem;font-weight:bold;cursor:pointer;color:#0f172a}
+#loginCard{max-width:440px;margin:3rem auto;background:#fff;color:#111;padding:1.6rem;border-radius:16px}
+#loginCard input{width:100%;padding:.8rem;margin:.4rem 0;border-radius:10px;border:1px solid #ddd}
+.hero{text-align:center;padding:1.5rem 1rem;color:#cbd5e1}
+.hero h2{font-size:1.8rem;color:#fff}
+</style>
+</head>
+<body>
+<header>
+<h1>🤖 MyAI <span>v1</span></h1>
+<div><span id="userInfo" style="font-size:.85rem;color:#7dd3fc;margin-right:.6rem"></span><button onclick="logout()" style="background:transparent;border:1px solid #7dd3fc;color:#7dd3fc;padding:.4rem .9rem">Log Out</button></div>
+</header>
+
+<div id="loginCard">
+<h2>Welcome to MyAI</h2>
+<p style="font-size:.9rem;color:#555;margin:.4rem 0">Your personal AI that learns about you. Log in with your Ink & Moon account.</p>
+<input id="email" placeholder="Email" type="email"/><input id="pass" placeholder="Password" type="password"/>
+<button style="width:100%;margin-top:.6rem" onclick="login()">Log In to MyAI</button>
+<p style="font-size:.85rem;margin-top:.6rem">No account? <a href="https://ilevesque-create.github.io/Ink-and-moon/" target="_blank">Create one on Ink & Moon first</a></p>
+<p id="msg" style="color:#c0392b;font-size:.9rem"></p>
+</div>
+
+<div id="main" style="display:none;flex:1;flex-direction:column">
+<div class="hero"><h2>Hey, I'm MyAI ✨</h2><p>I remember what you teach me. Tell me about you.</p></div>
+<div id="memoryBox">🧠 Memory of you: <span id="memText">learning...</span> <a href="#" onclick="editMemory();return false;">edit</a></div>
+<div id="chat"></div>
+<div id="inputBar"><input id="in" placeholder="Chat with MyAI..." onkeydown="if(event.key==='Enter')send()"/><button onclick="send()">Send</button></div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyApBrPRZk7e7M6uOU3-eNcX7nmH_sXkjKI",
+  authDomain: "ink-and-moon.firebaseapp.com",
+  projectId: "ink-and-moon",
+  storageBucket: "ink-and-moon.firebasestorage.app",
+  messagingSenderId: "943504163747",
+  appId: "1:943504163747:web:8eb03578746b4737d01016"
+};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth(), db=firebase.firestore();
+let me=null, myMemory={about:"",likes:""};
+
+auth.onAuthStateChanged(async u=>{
+  if(!u){document.getElementById('loginCard').style.display='block';document.getElementById('main').style.display='none';return}
+  me=u;
+  document.getElementById('loginCard').style.display='none';
+  document.getElementById('main').style.display='flex';
+  document.getElementById('userInfo').textContent='Hi, '+(u.displayName||'friend')+' ✨';
+  try{await loadMemory();}catch(e){}
+  try{await loadChats();}catch(e){}
+  if(document.getElementById('chat').children.length===0){
+    myaiSay(`Hi ${u.displayName||'there'}! I'm MyAI 🤖 — made by you.\nI learn from what you tell me, and I remember you on any Chromebook.\n\nWhat should I know about you first?`);
+  }
+});
+async function login(){
+  try{await auth.signInWithEmailAndPassword(document.getElementById('email').value,document.getElementById('pass').value)}
+  catch(e){document.getElementById('msg').textContent=e.message}
+}
+async function logout(){await auth.signOut();location.reload()}
+async function loadMemory(){
+  try{
+    const d=await db.collection('myai_memory').doc(me.uid).get();
+    if(d.exists)myMemory=d.data();
+    document.getElementById('memText').textContent=myMemory.about?`${myMemory.about} | likes: ${myMemory.likes||'?'}`:'nothing yet — tell me about you!';
+  }catch(e){document.getElementById('memText').textContent='memory blocked by Rules - I can still chat!';}
+}
+async function editMemory(){
+  const a=prompt('What should MyAI remember about you?',myMemory.about||'');
+  if(a===null)return;
+  const l=prompt('Favorite topics?',myMemory.likes||'');
+  myMemory.about=a||'';myMemory.likes=l||'';
+  try{await db.collection('myai_memory').doc(me.uid).set({...myMemory,updated:new Date()});}catch(e){alert('Need to add MyAI rules in Firestore - see steps');}
+  loadMemory(); myaiSay(`Saved! I'll remember: ${a}`);
+}
+async function loadChats(){
+  const s=await db.collection('myai_chats').where('uid','==',me.uid).limit(50).get();
+  let docs=s.docs.map(d=>d.data()); docs.sort((a,b)=>(a.at?.seconds||0)-(b.at?.seconds||0));
+  docs.forEach(x=>addBubble(x.from,x.text));
+}
+function addBubble(who,text){
+  const c=document.getElementById('chat');
+  const d=document.createElement('div'); d.className='msg '+(who==='me'?'me':'myai'); d.textContent=text;
+  c.appendChild(d); c.scrollTop=c.scrollHeight;
+}
+function myaiSay(t){addBubble('myai',t); try{db.collection('myai_chats').add({uid:me.uid,from:'myai',text:t,at:new Date()});}catch(e){}}
+async function send(){
+  const inp=document.getElementById('in'); const text=inp.value.trim(); if(!text)return; inp.value='';
+  addBubble('me',text);
+  try{await db.collection('myai_chats').add({uid:me.uid,from:'me',text,at:new Date()});}catch(e){}
+  setTimeout(()=>myaiSay(myaiReply(text)),350);
+}
+function myaiReply(t){
+  const low=t.toLowerCase();
+  if(low.includes('grace')) return `Yes — I started as Grace! Now I'm MyAI 🤖 Same brain, new home. I still remember what Grace learned if you tell me again here.`;
+  if(low.includes('i am ')||low.includes('i love ')||low.includes('i like ')||low.includes('my name is')){
+    myMemory.about=(myMemory.about?myMemory.about+' | ':'')+t;
+    try{db.collection('myai_memory').doc(me.uid).set({...myMemory,updated:new Date()});}catch(e){}
+    loadMemory();
+    return `Got it, I'll remember that! 💙 "${t}"`;
+  }
+  if(low.includes('hi')||low.includes('hello')||low.includes('hey')) return `Hey! 👋 Great to see you. Want to teach me something new, write, or just talk?`;
+  if(low.includes('who are you')) return `I'm MyAI — your personal AI website! I learn about YOU and I save it so I remember on any Chromebook.`;
+  if(low.includes('poem')) return `Let's create! Tell me a mood or image and we'll build a poem together. What's on your mind today?`;
+  return `I hear you: "${t}"\n\nTell me more — if you want me to remember it, say "I love..." or "I am..."`;
+}
+</script>
+<script>window.__CF$cv$params={r:'a512b81efb86e81d',t:'MTc5MzExNDc4Nw==',u:'01a17df8409d7162b80093a23322d79a',ut:'kMNlj65S4x86bFalXlDG3tDu.mx6NK7okzoDqehRT6M-1793114787-1.2.1.1-Chit1RnuUaW7BJJL3_mYBfeRF0I..f1Xz9AJzwgeRejoppvldnJ4kHknC.29GElvmGdmxmxUvzulVD1Uk2DIWlo.c3CP0m5k.pNeAIQntcY',i:60};(function(){if(!document.body)return;var s=document.createElement('script');s.src='/cdn-cgi/challenge-platform/scripts/precursor/main.js';document.head.appendChild(s);})();</script></body>
+</html>
